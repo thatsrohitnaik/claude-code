@@ -1,0 +1,197 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+model User {
+  id               String    @id @default(uuid())
+  clerkId          String    @unique
+  email            String    @unique
+  name             String
+  avatarUrl        String?
+  plan             Plan      @default(FREE)
+  lifeStage        String?
+  nudgeStyle       String    @default("gentle")
+  timezone         String    @default("UTC")
+  onboardingDone   Boolean   @default(false)
+  nudgeCount       Int       @default(0)
+  nudgeCountResetAt DateTime @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  goals            Goal[]
+  tasks            Task[]
+  plans            Plan_[]
+  progressLogs     ProgressLog[]
+  nudges           Nudge[]
+  memories         Memory[]
+  weeklyReports    WeeklyReport[]
+}
+
+enum Plan {
+  FREE
+  PRO
+  PREMIUM
+}
+
+model Goal {
+  id           String      @id @default(uuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  type         GoalType
+  horizon      Horizon
+  progressPct  Int         @default(0)
+  targetDate   DateTime?
+  status       GoalStatus  @default(ACTIVE)
+  priority     Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  tasks        Task[]
+  progressLogs ProgressLog[]
+  nudges       Nudge[]
+}
+
+enum GoalType {
+  CAREER
+  HEALTH
+  LEARNING
+  CREATIVITY
+  FINANCE
+  RELATIONSHIPS
+  SIDE_PROJECT
+  MENTAL_WELLNESS
+  OTHER
+}
+
+enum Horizon {
+  DAILY
+  MONTHLY
+  YEARLY
+  LIFETIME
+}
+
+enum GoalStatus {
+  ACTIVE
+  ON_TRACK
+  AT_RISK
+  STALLED
+  COMPLETED
+  PAUSED
+}
+
+model Task {
+  id           String      @id @default(uuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goalId       String?
+  goal         Goal?       @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  title        String
+  recurrence   String?
+  dueDate      DateTime?
+  scheduledFor String?
+  completed    Boolean     @default(false)
+  completedAt  DateTime?
+  skipped      Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+}
+
+model Plan_ {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekNumber     Int
+  year           Int
+  weeklyActions  Json
+  resourceLinks  Json
+  planSummary    String
+  version        Int      @default(1)
+  generatedAt    DateTime @default(now())
+
+  @@unique([userId, weekNumber, year])
+}
+
+model ProgressLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goalId    String?
+  goal      Goal?    @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  score     Int
+  note      String?
+  mood      String?
+  loggedAt  DateTime @default(now())
+}
+
+model Nudge {
+  id          String      @id @default(uuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        NudgeType
+  message     String
+  goalId      String?
+  goal        Goal?       @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  delivered   Boolean     @default(false)
+  opened      Boolean     @default(false)
+  sentAt      DateTime?
+  createdAt   DateTime    @default(now())
+}
+
+enum NudgeType {
+  STALL_ALERT
+  MILESTONE
+  MORNING_BRIEFING
+  EVENING_CHECKIN
+  RESOURCE_SUGGEST
+  STREAK_PROTECT
+}
+
+model Memory {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    String
+  content     String
+  embedding   Unsupported("vector(1536)")?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model WeeklyReport {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekNumber     Int
+  year           Int
+  tasksCompleted Int
+  streakDays     Int
+  weekScore      Int
+  focusHours     Float
+  goalProgress   Json
+  insights       Json
+  recommendations Json
+  generatedAt    DateTime @default(now())
+
+  @@unique([userId, weekNumber, year])
+}
+
+model Resource {
+  id          String   @id @default(uuid())
+  title       String
+  url         String
+  type        String
+  goalTypes   String[]
+  skillLevel  String
+  durationHours Float
+  embedding   Unsupported("vector(1536)")?
+  createdAt   DateTime @default(now())
+}

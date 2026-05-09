@@ -1,0 +1,31 @@
+{
+  "name": "@lifepilot/api",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@lifepilot/config": "*",
+    "@lifepilot/db": "*",
+    "@lifepilot/types": "*",
+    "@lifepilot/ai": "*",
+    "@trpc/server": "^11.0.0-rc.300",
+    "express": "^4.18.0",
+    "cors": "^2.8.5",
+    "zod": "^3.22.0",
+    "jsonwebtoken": "^9.0.0",
+    "@clerk/clerk-sdk-node": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}
