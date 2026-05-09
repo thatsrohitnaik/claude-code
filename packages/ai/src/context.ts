@@ -1,11 +1,11 @@
 import { db } from "@lifepilot/db";
 import { differenceInDays, subDays, format } from "date-fns";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { PromptVariables } from "./prompts/system";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getGemini() {
+  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+}
 
 interface GoalWithMeta {
   id: string;
@@ -221,12 +221,10 @@ export async function retrieveRelevantMemories(
   query: string
 ): Promise<RelevantMemory[]> {
   try {
-    const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: query,
-    });
-
-    const vector = embeddingResponse.data[0].embedding;
+    const genAI = getGemini();
+    const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+    const result = await embeddingModel.embedContent(query);
+    const vector = result.embedding.values;
 
     // Use raw SQL for pgvector similarity search
     const memories = await db.$queryRaw<Array<{ category: string; content: string }>>`

@@ -1,16 +1,10 @@
-import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
-import { buildSystemPrompt, type Intent, type PromptVariables } from "./prompts/system";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { buildSystemPrompt, type Intent } from "./prompts/system";
 import { promptVariablesFromContext, buildContext, type BuildContextResult } from "./context";
-import type { ReadableStream } from "node:stream";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getGemini() {
+  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+}
 
 export interface LLMResponse {
   content: string;
@@ -27,42 +21,22 @@ export async function callLLM(
   const promptVars = promptVariablesFromContext(context, intent, userMessage);
   const systemPrompt = buildSystemPrompt(promptVars);
 
-  // Build conversation messages
-  const messages: Anthropic.MessageParam[] = [
-    { role: "user", content: systemPrompt },
-    ...conversationHistory.map((msg) => ({
-      role: msg.role as "user" | "assistant",
-      content: msg.content,
-    })),
-    { role: "user", content: userMessage },
-  ];
+  // Build conversation for Gemini
+  const fullPrompt = `${systemPrompt}\n\nUser message: ${userMessage}`;
 
   try {
-    // Try Anthropic first
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      messages,
-    });
+    const genAI = getGemini();
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-    const content = response.content[0].type === "text" ? response.content[0].text : "";
+    const result = await model.generateContent(fullPrompt);
+    const response = result.response;
+    const content = response.text();
 
     return { content };
   } catch (error) {
-    console.error("Anthropic API error, falling back to OpenAI:", error);
-
-    // Fallback to OpenAI
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...conversationHistory,
-        { role: "user", content: userMessage },
-      ],
-    });
-
+    console.error("Gemini API error:", error);
     return {
-      content: response.choices[0]?.message?.content || "",
+      content: "AI service is not configured. Please add your GEMINI_API_KEY to the environment.",
     };
   }
 }
@@ -77,46 +51,23 @@ export async function* streamLLM(
   const promptVars = promptVariablesFromContext(context, intent, userMessage);
   const systemPrompt = buildSystemPrompt(promptVars);
 
-  try {
-    // Try Anthropic streaming
-    const stream = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      messages: [
-        { role: "user", content: systemPrompt },
-        ...conversationHistory.map((msg) => ({
-          role: msg.role as "user" | "assistant",
-          content: msg.content,
-        })),
-        { role: "user", content: userMessage },
-      ],
-    });
+  const fullPrompt = `${systemPrompt}\n\nUser message: ${userMessage}`;
 
-    for await (const chunk of stream) {
-      if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
-        yield chunk.delta.text;
+  try {
+    const genAI = getGemini();
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const result = await model.generateContentStream(fullPrompt);
+
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) {
+        yield text;
       }
     }
   } catch (error) {
-    console.error("Anthropic streaming error, falling back to OpenAI:", error);
-
-    // Fallback to OpenAI streaming
-    const stream = await openai.chat.completions.create({
-      model: "gpt-4o",
-      stream: true,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...conversationHistory,
-        { role: "user", content: userMessage },
-      ],
-    });
-
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content;
-      if (content) {
-        yield content;
-      }
-    }
+    console.error("Gemini streaming error:", error);
+    yield "AI service is not configured. Please add your GEMINI_API_KEY to the environment.";
   }
 }
 
@@ -134,11 +85,11 @@ export async function processAIResponse(
       const { __memory__ } = parsed;
 
       if (__memory__?.category && __memory__?.content) {
-        // Generate embedding and store memory
-        const embeddingResponse = await openai.embeddings.create({
-          model: "text-embedding-3-small",
-          input: __memory__.content,
-        });
+        // Generate embedding using Gemini
+        const genAI = getGemini();
+        const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        const result = await embeddingModel.embedContent(__memory__.content);
+        const embedding = result.embedding.values;
 
         const { db } = await import("@lifepilot/db");
         await db.memory.create({
@@ -146,7 +97,7 @@ export async function processAIResponse(
             userId,
             category: __memory__.category,
             content: __memory__.content,
-            embedding: embeddingResponse.data[0].embedding,
+            embedding: embedding as any,
           },
         });
 

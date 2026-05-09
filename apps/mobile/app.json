@@ -4,35 +4,24 @@
     "slug": "lifepilot",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "scheme": "lifepilot",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
       "backgroundColor": "#0D0D0D"
     },
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.lifepilot.app",
-      "infoPlist": {
-        "NSSupportsLiveActivities": true
-      }
+      "bundleIdentifier": "com.lifepilot.app"
     },
     "android": {
-      "package": "com.lifepilot.app",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0D0D0D"
-      }
+      "package": "com.lifepilot.app"
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/favicon.png"
+      "output": "static"
     },
-    "plugins": ["expo-router", "expo-local-authentication"],
+    "plugins": ["expo-router"],
     "experiments": {
       "typedRoutes": true
     },
