@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useAppStore } from "../../src/store";
+import { useAuth } from "../../context/auth";
 
 interface Message {
   id: string;
@@ -10,9 +11,16 @@ interface Message {
   content: string;
 }
 
+const suggestions = [
+  "What should I focus on today?",
+  "Am I on track this week?",
+  "Suggest resources for my goals",
+];
+
 export default function ChatScreen() {
   const router = useRouter();
   const { userName } = useAppStore();
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -24,46 +32,89 @@ export default function ChatScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  const handleSend = async () => {
-    if (!inputText.trim() || isLoading) return;
+  const showSuggestions = messages.length < 3;
+
+  const handleSend = async (text?: string) => {
+    const messageText = text || inputText.trim();
+    if (!messageText || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: inputText.trim(),
+      content: messageText,
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInputText("");
+    if (!text) setInputText("");
     setIsLoading(true);
 
-    // Simulate AI response (in Phase 4, connect to real API)
-    setTimeout(() => {
-      const aiResponse: Message = {
+    try {
+      // Call the API - in production this would be a real API call
+      // For now, simulate the API call
+      const response = await fetch("http://localhost:4000/trpc/ai.chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          json: {
+            message: messageText,
+            history: messages.map(m => ({ role: m.role, content: m.content })),
+          },
+        }),
+      });
+
+      // If API is not available, use fallback
+      let aiResponse: string;
+      if (response.ok) {
+        const data = await response.json();
+        aiResponse = data.result?.data?.json?.response || getFallbackResponse(messageText);
+      } else {
+        aiResponse = getFallbackResponse(messageText);
+      }
+
+      const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: getAIResponse(userMessage.content),
+        content: aiResponse,
       };
-      setMessages((prev) => [...prev, aiResponse]);
-      setIsLoading(false);
-    }, 1500);
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      // Fallback response when API is not available
+      const fallbackResponse = getFallbackResponse(messageText);
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: fallbackResponse,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    }
+
+    setIsLoading(false);
   };
 
-  const getAIResponse = (message: string): string => {
+  const getFallbackResponse = (message: string): string => {
     const lower = message.toLowerCase();
-    if (lower.includes("goal") || lower.includes("goal")) {
-      return "Great question about goals! Based on what I see, you have 3 active goals. Which one would you like to focus on?";
+    if (lower.includes("goal") || lower.includes("goals")) {
+      return "You're working on 3 active goals: Learn system design (45%), Run 5k (60%), Read 12 books this year (25%). The reading goal is falling behind — you need to finish roughly 1 book every 2.5 weeks to hit your target. Which one do you want to focus on?";
     }
     if (lower.includes("task") || lower.includes("todo")) {
-      return "You've got 2 tasks completed today and 1 pending. Want me to help you prioritize?";
+      return "You have 3 tasks for today. 1 is done, 2 pending. The highest priority is the system design study session — it's tied to your career goal and you're already 45% through.";
     }
-    if (lower.includes("progress") || lower.includes("streak")) {
-      return "You're on a 7-day streak! That's impressive. Your week completion is at 65%.";
+    if (lower.includes("progress") || lower.includes("streak") || lower.includes("track")) {
+      return "You're on a 7-day streak — impressive! Week completion is at 65%. Your career goal is at 45% (on track), fitness at 60% (on track), and reading at 25% (at risk). Want me to help recalibrate the reading goal?";
     }
-    if (lower.includes("help") || lower.includes("what")) {
-      return "I can help you with goal planning, task prioritization, progress tracking, and answering questions about your journey. What would you like to explore?";
+    if (lower.includes("resource") || lower.includes("learn") || lower.includes("study")) {
+      return "For system design, watch Alex Xu's System Design Interview playlist on YouTube — 4 hours, covers exactly what interviewers test. Start with the URL shortener video. Then grab 'Designing Data-Intensive Applications' by Martin Kleppmann — it's the gold standard.";
     }
-    return "I'm here to help you stay on track with your goals. Ask me anything about your progress, plans, or what to focus on next!";
+    if (lower.includes("help") || lower.includes("what can") || lower.includes("what should")) {
+      return "I can help you: track progress on your 3 goals, prioritize today's tasks, suggest specific learning resources, or create a weekly plan. What do you need most right now?";
+    }
+    return "I'm here to help you hit your goals. Ask me about your progress, what to focus on next, or get specific resource recommendations. What's on your mind?";
+  };
+
+  const handleSuggestionPress = (suggestion: string) => {
+    handleSend(suggestion);
   };
 
   const renderMessage = ({ item }: { item: Message }) => (
@@ -113,8 +164,25 @@ export default function ChatScreen() {
           </View>
         )}
 
+        {/* Quick Suggestions */}
+        {showSuggestions && (
+          <View style={styles.suggestionsContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionsScroll}>
+              {suggestions.map((suggestion, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.suggestionChip}
+                  onPress={() => handleSuggestionPress(suggestion)}
+                >
+                  <Text style={styles.suggestionText}>{suggestion}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* Input */}
-        <View style={styles.inputContainer}>
+        <View style={styles.inputContainer} importantForAutofill="no">
           <TextInput
             style={styles.input}
             placeholder="Message Pilot..."
@@ -123,11 +191,13 @@ export default function ChatScreen() {
             onChangeText={setInputText}
             multiline
             maxLength={500}
-            onSubmitEditing={handleSend}
+            spellCheck={false}
+            dataDetectorTypes="none"
+            onSubmitEditing={() => handleSend()}
           />
           <TouchableOpacity
             style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]}
-            onPress={handleSend}
+            onPress={() => handleSend()}
             disabled={!inputText.trim() || isLoading}
           >
             <Text style={styles.sendButtonText}>→</Text>
@@ -219,6 +289,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6B7280",
     fontStyle: "italic",
+  },
+  suggestionsContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  suggestionsScroll: {
+    gap: 8,
+    flexDirection: "row",
+  },
+  suggestionChip: {
+    backgroundColor: "#1F2937",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#374151",
+  },
+  suggestionText: {
+    color: "#9CA3AF",
+    fontSize: 14,
   },
   inputContainer: {
     flexDirection: "row",

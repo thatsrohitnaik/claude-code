@@ -4,25 +4,24 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useAppStore, DEMO_GOALS, DEMO_TASKS } from "../../src/store";
+import { useAuth } from "../../context/auth";
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { goals, tasks, streakDays, weekCompletion, setGoals, setTasks, setStats, completeTask } = useAppStore();
   const [nudge, setNudge] = useState("You're making great progress! Keep up the momentum today.");
-  const [isLoadingNudge, setIsLoadingNudge] = useState(false);
+  const [completedTasksList, setCompletedTasksList] = useState<Set<string>>(new Set());
 
-  // Load demo data for now
+  const userInitial = user?.email?.charAt(0).toUpperCase() || "U";
+
   useEffect(() => {
-    // In Phase 3, this will fetch from API
     setGoals(DEMO_GOALS);
     setTasks(DEMO_TASKS);
     setStats(7, 65);
   }, []);
 
-  // Fetch AI nudge on mount
   useEffect(() => {
-    // In Phase 3, this will call: await trpc.ai.nudge.query()
-    // For now, use a contextual nudge based on time of day
     const hour = new Date().getHours();
     if (hour < 12) {
       setNudge("Good morning! Your system design goal is at 45%. Perfect time for a quick study session.");
@@ -58,6 +57,47 @@ export default function HomeScreen() {
     return colors[type] || "#6366F1";
   };
 
+  const handleCompleteTask = (taskId: string) => {
+    const newCompleted = new Set(completedTasksList);
+    if (newCompleted.has(taskId)) {
+      newCompleted.delete(taskId);
+    } else {
+      newCompleted.add(taskId);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    setCompletedTasksList(newCompleted);
+    completeTask(taskId);
+  };
+
+  const handleLetsDoIt = () => {
+    router.push("/chat" as any);
+  };
+
+  const handleRemindLater = () => {
+    // Just dismiss for now - could schedule a reminder
+  };
+
+  // Welcome state for new users with 0 goals
+  if (goals.length === 0) {
+    return (
+      <LinearGradient colors={["#0D0D0D", "#111111"]} style={styles.container}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.emptyContent}>
+          <Text style={styles.welcomeEmoji}>🚀</Text>
+          <Text style={styles.welcomeTitle}>Let's build your roadmap</Text>
+          <Text style={styles.welcomeSubtitle}>
+            Tell Pilot your goals and get a personalised plan in minutes
+          </Text>
+          <TouchableOpacity
+            style={styles.getStartedButton}
+            onPress={() => router.push("/goals/new" as any)}
+          >
+            <Text style={styles.getStartedText}>Get started</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </LinearGradient>
+    );
+  }
+
   return (
     <LinearGradient colors={["#0D0D0D", "#111111"]} style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -65,10 +105,10 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>{getGreeting()}</Text>
-            <Text style={styles.subtitle}>Here's your day</Text>
+            <Text style={styles.subtitle}>Your AI life co-pilot</Text>
           </View>
           <TouchableOpacity style={styles.avatar}>
-            <Text style={styles.avatarText}>U</Text>
+            <Text style={styles.avatarText}>{userInitial}</Text>
           </TouchableOpacity>
         </View>
 
@@ -76,28 +116,41 @@ export default function HomeScreen() {
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{streakDays}</Text>
-            <Text style={styles.statLabel}>day streak</Text>
+            <Text style={styles.statLabel}>day streak 🔥</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{weekCompletion}%</Text>
-            <Text style={styles.statLabel}>week done</Text>
+            <Text style={styles.statLabel}>this week</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{activeGoalsCount}</Text>
-            <Text style={styles.statLabel}>active goals</Text>
+            <Text style={styles.statLabel}>goals active</Text>
           </View>
         </View>
 
         {/* Pilot Card */}
-        <TouchableOpacity style={styles.pilotCard} onPress={() => router.push("/chat" as any)}>
+        <View style={styles.pilotCard}>
           <View style={styles.pilotHeader}>
-            <Text style={styles.pilotIcon}>✦</Text>
-            <Text style={styles.pilotTitle}>Pilot</Text>
+            <View style={styles.pilotTitleRow}>
+              <Text style={styles.pilotIcon}>✦</Text>
+              <Text style={styles.pilotTitle}>Pilot</Text>
+              <View style={styles.aiBadge}>
+                <Text style={styles.aiBadgeText}>AI</Text>
+              </View>
+            </View>
           </View>
           <Text style={styles.pilotMessage}>
             {nudge}
           </Text>
-        </TouchableOpacity>
+          <View style={styles.pilotButtons}>
+            <TouchableOpacity style={styles.primaryButton} onPress={handleLetsDoIt}>
+              <Text style={styles.primaryButtonText}>Let's do it</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryButton} onPress={handleRemindLater}>
+              <Text style={styles.secondaryButtonText}>Remind me later</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* Active Goals */}
         <View style={styles.section}>
@@ -141,31 +194,31 @@ export default function HomeScreen() {
             <Text style={styles.sectionTitle}>Today's Tasks</Text>
             <Text style={styles.taskCount}>{completedTasks}/{tasks.length}</Text>
           </View>
-          {todayTasks.map((task) => (
-            <TouchableOpacity key={task.id} style={styles.taskCard}>
-              <TouchableOpacity
-                style={[styles.checkbox, task.completed && styles.checkboxCompleted]}
-                onPress={() => {
-                  if (!task.completed) {
-                    completeTask(task.id);
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                  }
-                }}
-              >
-                {task.completed && <Text style={styles.checkmark}>✓</Text>}
-              </TouchableOpacity>
-              <View style={styles.taskContent}>
-                <Text style={[styles.taskTitle, task.completed && styles.taskCompleted]}>
-                  {task.title}
-                </Text>
-                {task.scheduledFor && (
-                  <Text style={styles.taskSchedule}>
-                    {task.scheduledFor.charAt(0).toUpperCase() + task.scheduledFor.slice(1)}
+          {todayTasks.length === 0 ? (
+            <Text style={styles.noTasksText}>No tasks for today — tap Plan to generate your week</Text>
+          ) : (
+            todayTasks.map((task) => (
+              <TouchableOpacity key={task.id} style={styles.taskCard}>
+                <TouchableOpacity
+                  style={[styles.checkbox, completedTasksList.has(task.id) && styles.checkboxCompleted]}
+                  onPress={() => handleCompleteTask(task.id)}
+                >
+                  {completedTasksList.has(task.id) && <Text style={styles.checkmark}>✓</Text>}
+                </TouchableOpacity>
+                <View style={styles.taskContent}>
+                  <Text style={[styles.taskTitle, completedTasksList.has(task.id) && styles.taskCompleted]}>
+                    {task.title}
                   </Text>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
+                  <View style={styles.taskMeta}>
+                    <View style={[styles.goalDot, { backgroundColor: getGoalTypeColor(task.goalType || "CAREER") }]} />
+                    <Text style={styles.taskSchedule}>
+                      {task.scheduledFor?.charAt(0).toUpperCase() + task.scheduledFor?.slice(1) || "Today"}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
 
         <View style={styles.bottomPadding} />
@@ -239,11 +292,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,
+    borderLeftWidth: 4,
+    borderLeftColor: "#7C3AED",
   },
   pilotHeader: {
+    marginBottom: 12,
+  },
+  pilotTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
   },
   pilotIcon: {
     fontSize: 20,
@@ -254,11 +311,54 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#FFFFFF",
+    marginRight: 8,
+  },
+  aiBadge: {
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  aiBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   pilotMessage: {
-    fontSize: 16,
+    fontSize: 15,
     color: "#D1D5DB",
     lineHeight: 24,
+    marginBottom: 16,
+  },
+  pilotButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  primaryButton: {
+    flex: 1,
+    backgroundColor: "#7C3AED",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  primaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  secondaryButton: {
+    flex: 1,
+    backgroundColor: "transparent",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#374151",
+  },
+  secondaryButtonText: {
+    color: "#9CA3AF",
+    fontSize: 14,
+    fontWeight: "500",
   },
   section: {
     paddingHorizontal: 20,
@@ -271,7 +371,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "600",
     color: "#FFFFFF",
   },
@@ -282,6 +382,12 @@ const styles = StyleSheet.create({
   taskCount: {
     fontSize: 14,
     color: "#9CA3AF",
+  },
+  noTasksText: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+    paddingVertical: 24,
   },
   goalCard: {
     backgroundColor: "#1F2937",
@@ -354,8 +460,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   checkboxCompleted: {
-    backgroundColor: "#6366F1",
-    borderColor: "#6366F1",
+    backgroundColor: "#7C3AED",
+    borderColor: "#7C3AED",
   },
   checkmark: {
     color: "#FFFFFF",
@@ -374,11 +480,58 @@ const styles = StyleSheet.create({
     textDecorationLine: "line-through",
     color: "#6B7280",
   },
+  taskMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  goalDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
   taskSchedule: {
     fontSize: 12,
     color: "#9CA3AF",
   },
   bottomPadding: {
     height: 100,
+  },
+  // Welcome state styles
+  emptyContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 40,
+    paddingTop: 120,
+  },
+  welcomeEmoji: {
+    fontSize: 64,
+    marginBottom: 24,
+  },
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  welcomeSubtitle: {
+    fontSize: 16,
+    color: "#9CA3AF",
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 32,
+  },
+  getStartedButton: {
+    backgroundColor: "#7C3AED",
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+  },
+  getStartedText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

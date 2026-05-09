@@ -1,22 +1,22 @@
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
-import { useColorScheme } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
-  const icons: Record<string, string> = {
-    home: "⌂",
-    goals: "◎",
-    plan: "▦",
-    progress: "◉",
-    profile: "◈",
+  const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
+    index: "home",
+    goals: "flag",
+    plan: "calendar",
+    progress: "bar-chart",
+    profile: "person",
   };
 
   return (
-    <View style={styles.iconContainer}>
-      <Text style={[styles.icon, focused && styles.iconFocused]}>
-        {icons[name] || "○"}
-      </Text>
-    </View>
+    <Ionicons
+      name={icons[name] || "ellipse"}
+      size={24}
+      color={focused ? "#6366F1" : "#6B7280"}
+    />
   );
 }
 
@@ -35,7 +35,7 @@ export default function AppLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ focused }) => <TabIcon name="home" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="index" focused={focused} />,
         }}
       />
       <Tabs.Screen
@@ -66,6 +66,19 @@ export default function AppLayout() {
           tabBarIcon: ({ focused }) => <TabIcon name="profile" focused={focused} />,
         }}
       />
+      {/* Hide these from tab bar */}
+      <Tabs.Screen
+        name="chat"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="goals/[id]"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="goals/new"
+        options={{ href: null }}
+      />
     </Tabs>
   );
 }
@@ -82,16 +95,5 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 12,
     fontWeight: "500",
-  },
-  iconContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  icon: {
-    fontSize: 24,
-    color: "#6B7280",
-  },
-  iconFocused: {
-    color: "#6366F1",
   },
 });

@@ -21,15 +21,25 @@ export async function callLLM(
   const promptVars = promptVariablesFromContext(context, intent, userMessage);
   const systemPrompt = buildSystemPrompt(promptVars);
 
-  // Build conversation for Gemini
-  const fullPrompt = `${systemPrompt}\n\nUser message: ${userMessage}`;
-
   try {
     const genAI = getGemini();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+      systemInstruction: systemPrompt,
+    });
 
-    const result = await model.generateContent(fullPrompt);
-    const response = result.response;
+    // Build conversation history for Gemini
+    const history = conversationHistory.map(msg => ({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }],
+    }));
+
+    const chat = model.startChat({
+      history,
+    });
+
+    const result = await chat.sendMessage(userMessage);
+    const response = await result.response;
     const content = response.text();
 
     return { content };
@@ -51,13 +61,17 @@ export async function* streamLLM(
   const promptVars = promptVariablesFromContext(context, intent, userMessage);
   const systemPrompt = buildSystemPrompt(promptVars);
 
-  const fullPrompt = `${systemPrompt}\n\nUser message: ${userMessage}`;
-
   try {
     const genAI = getGemini();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+      systemInstruction: systemPrompt,
+    });
 
-    const result = await model.generateContentStream(fullPrompt);
+    const result = await model.generateContentStream([{
+      role: "user",
+      parts: [{ text: userMessage }],
+    }]);
 
     for await (const chunk of result.stream) {
       const text = chunk.text();

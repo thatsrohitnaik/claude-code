@@ -1,31 +1,39 @@
 import { useState } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../context/auth";
 import { LinearGradient } from "expo-linear-gradient";
 
-export default function LoginScreen() {
-  const { signIn } = useAuth();
+export default function SignUpScreen() {
+  const { signUp } = useAuth();
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSignIn = async () => {
+  const handleSignUp = async () => {
     if (!email || !password) {
       setError("Please enter both email and password");
       return;
     }
 
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+
     setLoading(true);
     setError("");
-    const { error } = await signIn(email, password);
+    setMessage("");
+
+    const { error } = await signUp(email, password);
     if (error) {
       setError(error.message);
     } else {
-      router.replace("/(app)");
+      setMessage("Check your email for a confirmation link!");
     }
     setLoading(false);
   };
@@ -36,13 +44,13 @@ export default function LoginScreen() {
       style={styles.container}
     >
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardView}>
-        <View style={styles.content}>
+        <ScrollView contentContainerStyle={styles.contentCentered}>
           <View style={styles.logoContainer}>
             <Text style={styles.logo}>✦</Text>
-            <Text style={styles.title}>LifePilot</Text>
+            <Text style={styles.title}>Create Account</Text>
           </View>
 
-          <Text style={styles.subtitle}>Your AI-powered life co-pilot</Text>
+          <Text style={styles.subtitle}>Start your journey with AI-powered goal tracking</Text>
 
           <View style={styles.form}>
             <TextInput
@@ -63,35 +71,36 @@ export default function LoginScreen() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry
-              autoComplete="password"
+              autoComplete="password-new"
             />
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {message ? <Text style={styles.successText}>{message}</Text> : null}
 
             <TouchableOpacity
-              style={styles.signInButton}
-              onPress={handleSignIn}
+              style={styles.signUpButton}
+              onPress={handleSignUp}
               disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.buttonText}>Sign In</Text>
+                <Text style={styles.buttonText}>Create Account</Text>
               )}
             </TouchableOpacity>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => router.push("/signup")}>
-              <Text style={styles.linkText}>Sign Up</Text>
+            <Text style={styles.footerText}>Already have an account? </Text>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={styles.linkText}>Sign In</Text>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.terms}>
             By continuing, you agree to our Terms of Service and Privacy Policy
           </Text>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
   );
@@ -105,28 +114,29 @@ const styles = StyleSheet.create({
   keyboardView: {
     flex: 1,
   },
-  content: {
-    flex: 1,
+  contentCentered: {
+    flexGrow: 1,
     justifyContent: "center",
     paddingHorizontal: 32,
+    paddingVertical: 40,
   },
   logoContainer: {
     alignItems: "center",
     marginBottom: 16,
   },
   logo: {
-    fontSize: 64,
+    fontSize: 48,
     color: "#6366F1",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   title: {
-    fontSize: 36,
+    fontSize: 28,
     fontWeight: "700",
     color: "#FFFFFF",
     letterSpacing: -1,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: "#9CA3AF",
     textAlign: "center",
     marginBottom: 32,
@@ -151,7 +161,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlign: "center",
   },
-  signInButton: {
+  successText: {
+    color: "#10B981",
+    fontSize: 14,
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  signUpButton: {
     backgroundColor: "#6366F1",
     paddingVertical: 16,
     borderRadius: 12,

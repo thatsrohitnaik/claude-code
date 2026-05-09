@@ -7,7 +7,17 @@ import { createContext } from "./context";
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors());
+// Allow requests from the mobile web app
+const corsOptions = {
+  origin: [
+    "http://localhost:8081",
+    "http://localhost:19006",
+    "exp://localhost:8081",
+  ],
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Health check endpoint
