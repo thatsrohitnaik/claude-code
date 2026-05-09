@@ -1,6 +1,7 @@
 import { router, protectedProcedure } from "../trpc";
 import { z } from "zod";
 import { db } from "@lifepilot/db";
+import { callLLM } from "@lifepilot/ai";
 
 export const plansRouter = router({
   // Get weekly plan
@@ -68,7 +69,7 @@ export const plansRouter = router({
     };
   }),
 
-  // Generate new plan (calls AI - implemented in Phase 3)
+  // Generate new plan (calls AI)
   generate: protectedProcedure
     .input(
       z.object({
@@ -77,8 +78,143 @@ export const plansRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // This would call AI in Phase 3
-      // For now, return empty plan structure
+      // Get user's active goals for context
+      const goals = await db.goal.findMany({
+        where: {
+          userId: ctx.user.id,
+          status: { in: ["ACTIVE", "ON_TRACK", "AT_RISK"] },
+        },
+        take: 5,
+      });
+
+      if (goals.length === 0) {
+        // No goals yet, create a placeholder plan
+        const plan = await db.plan_.upsert({
+          where: {
+            userId_weekNumber_year: {
+              userId: ctx.user.id,
+              weekNumber: input.weekNumber,
+              year: input.year,
+            },
+          },
+          create: {
+            userId: ctx.user.id,
+            weekNumber: input.weekNumber,
+            year: input.year,
+            weeklyActions: [],
+            resourceLinks: [],
+            planSummary: "Create some goals first, then I can help you plan your week!",
+          },
+          update: {
+            version: { increment: 1 },
+            weeklyActions: [],
+            resourceLinks: [],
+            planSummary: "Create some goals first, then I can help you plan your week!",
+            generatedAt: new Date(),
+          },
+        });
+
+        return {
+          id: plan.id,
+          weekNumber: plan.weekNumber,
+          year: plan.year,
+          weeklyActions: plan.weeklyActions as any[],
+          resourceLinks: plan.resourceLinks as any[],
+          planSummary: plan.planSummary,
+          generatedAt: plan.generatedAt.toISOString(),
+        };
+      }
+
+      // Call LLM to generate the plan
+      const goalsContext = goals
+        .map((g) => `- ${g.title} (${g.type}, ${g.progressPct}% complete)`)
+        .join("\n");
+
+      const prompt = `Generate a weekly action plan for this user.
+
+Their active goals:
+${goalsContext}
+
+Generate a JSON response with exactly this structure (no other text):
+{
+  "weekly_actions": [
+    {
+      "day": "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun",
+      "task": "specific task description",
+      "goalId": "the goal id it relates to",
+      "estimatedMinutes": number,
+      "scheduledFor": "morning" | "afternoon" | "evening"
+    }
+  ],
+  "resource_links": [
+    {
+      "title": "resource name",
+      "url": "https://...",
+      "type": "video" | "course" | "book" | "article",
+      "estimatedHours": number,
+      "goalId": "the goal id",
+      "reason": "why this is recommended"
+    }
+  ],
+  "plan_summary": "2-3 sentence narrative about the week's focus"
+}
+
+Create 5-10 actions spread across the week and 2-3 resources relevant to their goals.`;
+
+      try {
+        const response = await callLLM(
+          ctx.user.id,
+          prompt,
+          "plan_generate",
+          []
+        );
+
+        // Parse the JSON from the response
+        const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+
+          const plan = await db.plan_.upsert({
+            where: {
+              userId_weekNumber_year: {
+                userId: ctx.user.id,
+                weekNumber: input.weekNumber,
+                year: input.year,
+              },
+            },
+            create: {
+              userId: ctx.user.id,
+              weekNumber: input.weekNumber,
+              year: input.year,
+              weeklyActions: parsed.weekly_actions || [],
+              resourceLinks: parsed.resource_links || [],
+              planSummary: parsed.plan_summary || "Your personalized weekly plan.",
+            },
+            update: {
+              version: { increment: 1 },
+              weeklyActions: parsed.weekly_actions || [],
+              resourceLinks: parsed.resource_links || [],
+              planSummary: parsed.plan_summary || "Your personalized weekly plan.",
+              generatedAt: new Date(),
+            },
+          });
+
+          return {
+            id: plan.id,
+            weekNumber: plan.weekNumber,
+            year: plan.year,
+            weeklyActions: plan.weeklyActions as any[],
+            resourceLinks: plan.resourceLinks as any[],
+            planSummary: plan.planSummary,
+            generatedAt: plan.generatedAt.toISOString(),
+          };
+        }
+      } catch (error) {
+        console.error("Plan generation error:", error);
+      }
+
+      // Fallback if LLM fails
       const plan = await db.plan_.upsert({
         where: {
           userId_weekNumber_year: {
@@ -93,13 +229,13 @@ export const plansRouter = router({
           year: input.year,
           weeklyActions: [],
           resourceLinks: [],
-          planSummary: "Plan generation coming soon!",
+          planSummary: "Couldn't generate plan. Please try again.",
         },
         update: {
           version: { increment: 1 },
           weeklyActions: [],
           resourceLinks: [],
-          planSummary: "Plan regeneration coming soon!",
+          planSummary: "Couldn't generate plan. Please try again.",
           generatedAt: new Date(),
         },
       });
