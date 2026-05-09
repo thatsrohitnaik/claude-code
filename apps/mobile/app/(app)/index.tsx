@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
 import { useAppStore, DEMO_GOALS, DEMO_TASKS } from "../../src/store";
 
 export default function HomeScreen() {
@@ -147,6 +148,7 @@ export default function HomeScreen() {
                 onPress={() => {
                   if (!task.completed) {
                     completeTask(task.id);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                   }
                 }}
               >

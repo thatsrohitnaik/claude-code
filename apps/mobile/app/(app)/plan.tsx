@@ -64,7 +64,7 @@ export default function PlanScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Weekly Plan</Text>
-          <Text style={styles.subtitle}>Week {new Date().toISO().split("-")[1]} of {new Date().getFullYear()}</Text>
+          <Text style={styles.subtitle}>Week {new Date().getMonth() + 1} of {new Date().getFullYear()}</Text>
         </View>
 
         {isLoading ? (

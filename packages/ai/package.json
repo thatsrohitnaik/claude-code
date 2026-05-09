@@ -5,7 +5,7 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
-    "@lifepilot/db": "workspace:*",
+    "@lifepilot/db": "1.0.0",
     "openai": "^4.47.0",
     "date-fns": "^3.6.0"
   },

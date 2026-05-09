@@ -26,6 +26,12 @@ interface AppState {
   userId: string | null;
   userName: string | null;
   isOnboarded: boolean;
+  lifeStage: string | null;
+  nudgeStyle: string | null;
+  plan: string;
+
+  // User profile
+  setUser: (user: { lifeStage?: string; nudgeStyle?: string; isOnboarded?: boolean }) => void;
 
   // Goals
   goals: Goal[];
@@ -56,6 +62,15 @@ export const useAppStore = create<AppState>((set) => ({
   userId: null,
   userName: null,
   isOnboarded: false,
+  lifeStage: null,
+  nudgeStyle: null,
+  plan: "FREE",
+
+  // User profile
+  setUser: (user) => set((state) => ({
+    ...state,
+    ...user,
+  })),
 
   // Goals
   goals: [],

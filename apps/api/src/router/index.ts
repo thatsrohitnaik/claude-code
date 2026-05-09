@@ -7,6 +7,7 @@ import { plansRouter } from "./plans";
 import { aiRouter } from "./ai";
 import { reportsRouter } from "./reports";
 import { memoriesRouter } from "./memories";
+import { stripeRouter } from "./stripe";
 
 export const appRouter = router({
   auth: authRouter,
@@ -17,6 +18,7 @@ export const appRouter = router({
   ai: aiRouter,
   reports: reportsRouter,
   memories: memoriesRouter,
+  stripe: stripeRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -1,16 +1,1 @@
-packages:
-  - 'apps/*'
-  - 'packages/*'
-
-allowBuilds:
-  '@clerk/shared': true
-
-onlyBuiltDependencies:
-  - '@clerk/shared'
-  - '@clerk/clerk-react'
-  - '@prisma/client'
-  - '@prisma/engines'
-  - browser-tabs-lock
-  - core-js
-  - esbuild
-  - prisma
+# Converted to yarn - see package.json for workspaces

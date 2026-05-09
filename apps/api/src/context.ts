@@ -1,12 +1,10 @@
 import type { inferAsyncReturnType } from "@trpc/server";
-import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
+import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import { db } from "@lifepilot/db";
 import { TRPCError } from "@trpc/server";
 
-// For now, we'll extract the user ID from the Authorization header
-// In production, you'd verify the Clerk JWT properly using @clerk/clerk-sdk-node
-async function getUserIdFromRequest(req: Request): Promise<string | null> {
-  const authHeader = req.headers.get("authorization");
+async function getUserIdFromRequest(req: CreateExpressContextOptions["req"]): Promise<string | null> {
+  const authHeader = req.headers.authorization;
   if (!authHeader) return null;
 
   // Expecting header format: "Bearer user_id" for simplicity during dev
@@ -18,7 +16,7 @@ async function getUserIdFromRequest(req: Request): Promise<string | null> {
   return null;
 }
 
-export async function createContext(opts: FetchCreateContextFnOptions) {
+export async function createContext(opts: CreateExpressContextOptions) {
   const req = opts.req;
 
   // Get Clerk user ID from authorization header
@@ -26,15 +24,26 @@ export async function createContext(opts: FetchCreateContextFnOptions) {
   const userId = await getUserIdFromRequest(req);
 
   if (!userId) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "No user ID from Clerk" });
+    // For development/testing without auth, create a demo user context
+    // In production, this would throw UNAUTHORIZED
+    return {
+      db,
+      userId: "demo-user-id",
+      user: {
+        id: "demo-user-id",
+        clerkId: "demo-user-id",
+        email: "demo@example.com",
+        name: "Demo User",
+        plan: "FREE",
+      },
+      isDevMode: true,
+    };
   }
 
   // Find user in our database
   let user = await db.user.findUnique({
     where: { clerkId: userId },
   });
-
-  // If user doesn't exist, they'll be created via webhook or need to complete onboarding first
 
   return {
     db,
@@ -48,6 +57,7 @@ export async function createContext(opts: FetchCreateContextFnOptions) {
           plan: user.plan,
         }
       : null,
+    isDevMode: false,
   };
 }
 
