@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   TextInput,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useAuth } from "../../context/auth";
 import {
   getJourneys,
@@ -78,6 +78,13 @@ export default function MyWorldScreen() {
   useEffect(() => {
     loadData();
   }, [user]);
+
+  // Refetch data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [user])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -205,28 +212,48 @@ export default function MyWorldScreen() {
         {/* This Week Summary */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>The big picture</Text>
-          <View style={styles.progressCard}>
-            <View style={styles.progressBar}>
-              <View
-                style={[
-                  styles.progressFill,
-                  { width: `${weekStats.completionPct}%` },
-                ]}
-              />
+          {weekStats.total === 0 ? (
+            <View style={styles.emptyProgressCard}>
+              <Text style={styles.emptyProgressEmoji}>🌱</Text>
+              <Text style={styles.emptyProgressTitle}>Nothing set up yet</Text>
+              <Text style={styles.emptyProgressSubtitle}>Let's change that</Text>
+              <TouchableOpacity
+                style={styles.emptyProgressButton}
+                onPress={() => router.push("/pilot")}
+              >
+                <Text style={styles.emptyProgressButtonText}>Tell Pilot what you want</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.progressText}>
-              {weekStats.completionPct}% of your week — nailed it
-            </Text>
-            <View style={styles.statsRow}>
-              <Text style={styles.statText}>
-                {weekStats.completed} things done
+          ) : (
+            <View style={styles.progressCard}>
+              <View style={styles.progressBar}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${weekStats.completionPct}%` },
+                  ]}
+                />
+              </View>
+              <Text style={styles.progressText}>
+                {weekStats.completionPct === 100
+                  ? "You nailed this week ✨"
+                  : weekStats.completionPct >= 70
+                    ? "Strong week — keep going 💪"
+                    : weekStats.completionPct >= 40
+                      ? "Getting there — you've got this"
+                      : "Just getting started 🌱"}
               </Text>
-              <Text style={styles.statDivider}>·</Text>
-              <Text style={[styles.statText, needsAttention > 0 && styles.statTextWarning]}>
-                {needsAttention} needs attention
-              </Text>
+              <View style={styles.statsRow}>
+                <Text style={styles.statText}>
+                  {weekStats.completed} things done
+                </Text>
+                <Text style={styles.statDivider}>·</Text>
+                <Text style={[styles.statText, needsAttention > 0 && styles.statTextWarning]}>
+                  {needsAttention} needs attention
+                </Text>
+              </View>
             </View>
-          </View>
+          )}
         </View>
 
         {/* Your Journeys */}

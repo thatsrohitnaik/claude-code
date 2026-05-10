@@ -14,6 +14,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { haptics } from "../../lib/haptics";
+import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/auth";
 import {
   getRitualsCount,
@@ -231,6 +232,8 @@ export default function PilotScreen() {
   // Handle category selection
   const handleCategoryPress = (categoryId: string) => {
     haptics.light();
+    console.log('Selected category id:', categoryId);
+    console.log('Items found:', CATEGORY_ITEMS[categoryId]);
 
     if (categoryId === "custom") {
       setMessages(prev => [...prev, {
@@ -448,8 +451,10 @@ export default function PilotScreen() {
 
     setIsLoading(true);
     try {
+      console.log('Current user:', user.id);
+
       // Create rituals
-      const rituals = reviewItems.map(item => ({
+      const ritualsToSave = reviewItems.map(item => ({
         user_id: user.id,
         title: item.label,
         category: selectedCategory || "custom",
@@ -462,14 +467,25 @@ export default function PilotScreen() {
         emoji: item.emoji,
       }));
 
-      const createdRituals = await createRituals(rituals);
+      console.log('Saving rituals:', JSON.stringify(ritualsToSave));
+
+      // Check if rituals table exists
+      const { data: tableCheck, error: tableError } = await supabase
+        .from('rituals')
+        .select('count', { count: 'exact', head: true });
+      console.log('Rituals table check:', { tableCheck, tableError });
+
+      const createdRituals = await createRituals(ritualsToSave);
+      console.log('Rituals saved successfully:', createdRituals.length);
 
       // Generate todos for each ritual
       for (const ritual of createdRituals) {
-        await generateTodosForRitual(ritual, 30);
+        const todos = await generateTodosForRitual(ritual, 30);
+        console.log(`Generated ${todos.length} todos for ritual: ${ritual.title}`);
       }
 
       const stats = await getTodayStats(user.id);
+      console.log('Today stats:', stats);
 
       setMessages(prev => [...prev, {
         id: Date.now().toString(),

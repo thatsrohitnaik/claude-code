@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { haptics } from "../../lib/haptics";
 import { useAuth } from "../../context/auth";
 import {
@@ -91,6 +91,13 @@ export default function TodayScreen() {
   useEffect(() => {
     loadData();
   }, [user]);
+
+  // Refetch data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [user])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
