@@ -25,30 +25,30 @@ export default function LoginScreen() {
     if (error) {
       setError(error.message);
     } else {
-      router.replace("/(app)");
+      router.replace("/(app)/pilot");
     }
     setLoading(false);
   };
 
   return (
     <LinearGradient
-      colors={["#0D0D0D", "#1A1A1A", "#0D0D0D"]}
+      colors={["#0A0A0A", "#111111", "#0A0A0A"]}
       style={styles.container}
     >
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardView}>
         <View style={styles.content}>
           <View style={styles.logoContainer}>
             <Text style={styles.logo}>✦</Text>
-            <Text style={styles.title}>LifePilot</Text>
+            <Text style={styles.title}>Pilot</Text>
           </View>
 
-          <Text style={styles.subtitle}>Your AI-powered life co-pilot</Text>
+          <Text style={styles.subtitle}>Your AI life co-pilot</Text>
 
           <View style={styles.form}>
             <TextInput
               style={styles.input}
               placeholder="Email"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor="#5A5A5A"
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -59,7 +59,7 @@ export default function LoginScreen() {
             <TextInput
               style={styles.input}
               placeholder="Password"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor="#5A5A5A"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -69,7 +69,7 @@ export default function LoginScreen() {
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <TouchableOpacity
-              style={styles.signInButton}
+              style={[styles.signInButton, loading && styles.buttonDisabled]}
               onPress={handleSignIn}
               disabled={loading}
             >
@@ -88,9 +88,13 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.terms}>
-            By continuing, you agree to our Terms of Service and Privacy Policy
-          </Text>
+          {/* Skip for now - demo mode */}
+          <TouchableOpacity
+            style={styles.skipButton}
+            onPress={() => router.replace("/(app)/pilot")}
+          >
+            <Text style={styles.skipText}>Continue in demo mode →</Text>
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </LinearGradient>
@@ -100,7 +104,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0D0D0D",
+    backgroundColor: "#0A0A0A",
   },
   keyboardView: {
     flex: 1,
@@ -116,7 +120,7 @@ const styles = StyleSheet.create({
   },
   logo: {
     fontSize: 64,
-    color: "#6366F1",
+    color: "#7C3AED",
     marginBottom: 16,
   },
   title: {
@@ -127,15 +131,15 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: "#9CA3AF",
+    color: "#9A9A9A",
     textAlign: "center",
-    marginBottom: 32,
+    marginBottom: 40,
   },
   form: {
     marginBottom: 24,
   },
   input: {
-    backgroundColor: "#1F2937",
+    backgroundColor: "#141414",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
@@ -143,7 +147,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: "#2A2A2A",
   },
   errorText: {
     color: "#EF4444",
@@ -152,11 +156,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   signInButton: {
-    backgroundColor: "#6366F1",
+    backgroundColor: "#7C3AED",
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: "center",
     marginTop: 8,
+  },
+  buttonDisabled: {
+    backgroundColor: "#2A2A2A",
   },
   buttonText: {
     color: "#FFFFFF",
@@ -169,17 +176,20 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   footerText: {
-    color: "#9CA3AF",
+    color: "#9A9A9A",
     fontSize: 14,
   },
   linkText: {
-    color: "#6366F1",
+    color: "#7C3AED",
     fontSize: 14,
     fontWeight: "600",
   },
-  terms: {
-    fontSize: 12,
-    color: "#6B7280",
-    textAlign: "center",
+  skipButton: {
+    alignItems: "center",
+    paddingVertical: 16,
+  },
+  skipText: {
+    color: "#5A5A5A",
+    fontSize: 14,
   },
 });

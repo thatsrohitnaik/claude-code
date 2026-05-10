@@ -13,6 +13,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useAuth } from "../../context/auth";
+import { signOut } from "../../lib/supabase";
+import { haptics } from "../../lib/haptics";
 import {
   getJourneys,
   getAmbitions,
@@ -24,10 +26,8 @@ import {
   updateUserSettings,
   pauseRitual,
   deleteRitual,
-  type Journey,
-  type Ambition,
-  type Ritual,
 } from "../../lib/db";
+import type { Journey, Ambition, Ritual } from "../../lib/types";
 
 export default function MyWorldScreen() {
   const router = useRouter();
@@ -41,6 +41,28 @@ export default function MyWorldScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [fridayWindup, setFridayWindup] = useState(true);
   const [eveningTime, setEveningTime] = useState("21:00");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  // Group rituals by category
+  const groupedRituals = rituals.reduce((acc, ritual) => {
+    const category = ritual.category || 'other';
+    if (!acc[category]) {
+      acc[category] = [];
+    }
+    acc[category].push(ritual);
+    return acc;
+  }, {} as Record<string, Ritual[]>);
+
+  const toggleGroup = (category: string) => {
+    const newSet = new Set(collapsedGroups);
+    if (newSet.has(category)) {
+      newSet.delete(category);
+    } else {
+      newSet.add(category);
+    }
+    setCollapsedGroups(newSet);
+    haptics.light();
+  };
 
   // Load data
   const loadData = async () => {
@@ -331,38 +353,60 @@ export default function MyWorldScreen() {
             </View>
           ) : (
             <>
-              {rituals.map(ritual => (
-                <TouchableOpacity
-                  key={ritual.id}
-                  style={styles.ritualRow}
-                  onLongPress={() => handleRitualLongPress(ritual)}
-                  delayLongPress={500}
-                >
-                  <Text style={styles.ritualEmoji}>{ritual.emoji || "✨"}</Text>
-                  <View style={styles.ritualContent}>
-                    <Text style={styles.ritualTitle}>{ritual.title}</Text>
-                    <Text style={styles.ritualMeta}>
-                      {formatFrequency(ritual.frequency)}
-                      {formatDay(ritual.preferred_day)}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.smallStatusBadge,
-                      ritual.is_paused && styles.smallStatusBadgePaused,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.smallStatusText,
-                        ritual.is_paused && styles.smallStatusTextPaused,
-                      ]}
+              {Object.entries(groupedRituals).map(([category, categoryRituals]) => {
+                const isCollapsed = collapsedGroups.has(category);
+                const categoryEmoji = categoryRituals[0]?.emoji || "✨";
+
+                return (
+                  <View key={category} style={styles.ritualGroup}>
+                    <TouchableOpacity
+                      style={styles.ritualGroupHeader}
+                      onPress={() => toggleGroup(category)}
                     >
-                      {ritual.is_paused ? "paused" : "in motion"}
-                    </Text>
+                      <Text style={styles.ritualGroupEmoji}>{categoryEmoji}</Text>
+                      <Text style={styles.ritualGroupTitle}>
+                        {category.charAt(0).toUpperCase() + category.slice(1).replace('_', ' ')} ({categoryRituals.length})
+                      </Text>
+                      <Text style={styles.ritualGroupToggle}>
+                        {isCollapsed ? "▼" : "▲"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {!isCollapsed && categoryRituals.map(ritual => (
+                      <TouchableOpacity
+                        key={ritual.id}
+                        style={styles.ritualRow}
+                        onLongPress={() => handleRitualLongPress(ritual)}
+                        delayLongPress={500}
+                      >
+                        <Text style={styles.ritualEmoji}>{ritual.emoji || "✨"}</Text>
+                        <View style={styles.ritualContent}>
+                          <Text style={styles.ritualTitle}>{ritual.title}</Text>
+                          <Text style={styles.ritualMeta}>
+                            {formatFrequency(ritual.frequency)}
+                            {formatDay(ritual.preferred_day)}
+                          </Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.smallStatusBadge,
+                            ritual.is_paused && styles.smallStatusBadgePaused,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.smallStatusText,
+                              ritual.is_paused && styles.smallStatusTextPaused,
+                            ]}
+                          >
+                            {ritual.is_paused ? "paused" : "in motion"}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
                   </View>
-                </TouchableOpacity>
-              ))}
+                );
+              })}
 
               <TouchableOpacity
                 style={styles.addMoreButton}
@@ -480,6 +524,31 @@ export default function MyWorldScreen() {
           <Text style={styles.sectionTitle}>Your space</Text>
 
           <View style={styles.settingsCard}>
+            {user ? (
+              <>
+                <View style={styles.settingsRow}>
+                  <Text style={styles.settingsLabel}>Account</Text>
+                  <Text style={styles.settingsValue}>{user.email}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.settingsButton}
+                  onPress={async () => {
+                    await signOut();
+                    router.push("/login");
+                  }}
+                >
+                  <Text style={styles.settingsButtonText}>Sign Out</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={styles.settingsButton}
+                onPress={() => router.push("/login")}
+              >
+                <Text style={styles.settingsButtonText}>Sign In to Save Progress</Text>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.settingsRow}>
               <Text style={styles.settingsLabel}>Evening check-in time</Text>
               <TextInput
@@ -557,6 +626,40 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: "#2A2A2A",
+  },
+  emptyProgressCard: {
+    backgroundColor: "#141414",
+    borderRadius: 16,
+    padding: 32,
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+    alignItems: "center",
+  },
+  emptyProgressEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  emptyProgressTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginBottom: 8,
+  },
+  emptyProgressSubtitle: {
+    fontSize: 15,
+    color: "#9A9A9A",
+    marginBottom: 20,
+  },
+  emptyProgressButton: {
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  emptyProgressButtonText: {
+    fontSize: 15,
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
   progressBar: {
     height: 8,
@@ -691,6 +794,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#7C3AED",
     fontWeight: "500",
+  },
+  // Ritual group
+  ritualGroup: {
+    backgroundColor: "#141414",
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+    overflow: "hidden",
+  },
+  ritualGroupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "#1A1A1A",
+  },
+  ritualGroupEmoji: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+  ritualGroupTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  ritualGroupToggle: {
+    fontSize: 14,
+    color: "#7C3AED",
   },
   // Ritual row
   ritualRow: {
@@ -835,6 +967,18 @@ const styles = StyleSheet.create({
   settingsLabel: {
     fontSize: 15,
     color: "#FFFFFF",
+  },
+  settingsButton: {
+    backgroundColor: "#7C3AED",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  settingsButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
   },
   settingsValue: {
     fontSize: 15,

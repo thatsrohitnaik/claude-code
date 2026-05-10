@@ -25,9 +25,22 @@ import {
   generateTodosForRitual,
   ensureUserSettings,
   updateStreak,
-  type Ritual,
 } from "../../lib/db";
+import type { Ritual, Frequency, DayOfWeek } from "../../lib/types";
 import { getStreakPersonality } from "../../lib/types";
+import { getClarifyingQuestion } from "../../lib/keywordClarifications";
+import { detectKeywordIntent, extractKeyword } from "../../lib/keywordDetection";
+import { generateKeywordRituals, generateWhileYoureAtIt, type GeneratedRitual } from "../../lib/generateKeywordRituals";
+
+// Keyword flow state types
+type KeywordFlowState =
+  | { stage: 'idle' }
+  | { stage: 'keyword_input' }
+  | { stage: 'clarifying'; keyword: string }
+  | { stage: 'generating'; keyword: string; clarification: string | null }
+  | { stage: 'reviewing'; keyword: string; items: GeneratedRitual[]; suggestion: GeneratedRitual | null }
+  | { stage: 'saving' }
+  | { stage: 'complete'; count: number };
 
 // Category definitions
 const CATEGORIES = [
@@ -39,6 +52,7 @@ const CATEGORIES = [
   { id: "relationships", emoji: "❤️", label: "Relationships" },
   { id: "wellbeing", emoji: "😌", label: "Mind & Wellbeing" },
   { id: "custom", emoji: "✨", label: "Add my own" },
+  { id: "ai_keyword", emoji: "🤖", label: "AI suggest" },
 ];
 
 // Pre-built items for each category
@@ -171,6 +185,176 @@ export default function PilotScreen() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [streakDays, setStreakDays] = useState(0);
 
+  // Keyword flow state
+  const [keywordState, setKeywordState] = useState<KeywordFlowState>({ stage: 'idle' });
+  const [keywordInput, setKeywordInput] = useState("");
+  const [selectedKeywordItems, setSelectedKeywordItems] = useState<Set<number>>(new Set());
+  const [customNewItem, setCustomNewItem] = useState<{ label: string; frequency: string; day: string | null; time: string | null } | null>(null);
+  const [editingFrequencyIndex, setEditingFrequencyIndex] = useState<number | null>(null);
+  const [suggestionAdded, setSuggestionAdded] = useState(false);
+  const [keywordItemFrequencies, setKeywordItemFrequencies] = useState<Record<number, { frequency: string; day: string | null; time: string | null }>>({});
+
+  // AI suggest chip handlers
+  const startKeywordFlow = () => {
+    setKeywordState({ stage: 'keyword_input' });
+    haptics.light();
+  };
+
+  const handleKeywordSubmit = () => {
+    if (!keywordInput.trim()) return;
+    const keyword = keywordInput.trim().toLowerCase();
+    setKeywordInput("");
+    haptics.light();
+
+    const question = getClarifyingQuestion(keyword);
+    if (question) {
+      setKeywordState({ stage: 'clarifying', keyword });
+    } else {
+      setKeywordState({ stage: 'generating', keyword, clarification: null });
+    }
+  };
+
+  const handleClarificationSelect = (value: string) => {
+    if (keywordState.stage !== 'clarifying') return;
+    haptics.light();
+    setKeywordState({ stage: 'generating', keyword: keywordState.keyword, clarification: value });
+  };
+
+  // Generate and show items
+  useEffect(() => {
+    if (keywordState.stage === 'generating') {
+      const generate = async () => {
+        const items = await generateKeywordRituals(keywordState.keyword, keywordState.clarification);
+        const suggestion = await generateWhileYoureAtIt(keywordState.keyword, keywordState.clarification);
+
+        // Pre-select all items
+        const allSelected = new Set(items.map((_, i) => i));
+        setSelectedKeywordItems(allSelected);
+        setSuggestionAdded(false);
+        setKeywordItemFrequencies({});
+        setKeywordState({ stage: 'reviewing', keyword: keywordState.keyword, items, suggestion });
+      };
+      generate();
+    }
+  }, [keywordState.stage === 'generating']);
+
+  // Toggle item selection
+  const toggleKeywordItem = (index: number) => {
+    const newSet = new Set(selectedKeywordItems);
+    if (newSet.has(index)) {
+      newSet.delete(index);
+    } else {
+      newSet.add(index);
+    }
+    setSelectedKeywordItems(newSet);
+    haptics.light();
+  };
+
+  // Handle suggestion add
+  const handleAddSuggestion = () => {
+    setSuggestionAdded(true);
+    haptics.light();
+  };
+
+  // Save keyword rituals
+  const saveKeywordRituals = async () => {
+    if (keywordState.stage !== 'reviewing' || !user) return;
+
+    setKeywordState({ stage: 'saving' });
+    setIsLoading(true);
+
+    try {
+      const itemsToSave = keywordState.items
+        .filter((_, i) => selectedKeywordItems.has(i))
+        .map((item, idx) => {
+          const modified = keywordItemFrequencies[idx];
+          return {
+            user_id: user.id,
+            title: item.title,
+            category: item.category,
+            frequency: (modified?.frequency || item.frequency) as Frequency,
+            preferred_day: (modified?.day || item.preferred_day) as DayOfWeek | null,
+            preferred_time: modified?.time || item.preferred_time,
+            why: item.why || null,
+            is_paused: false,
+            pause_until: null,
+            emoji: item.emoji || null,
+          };
+        });
+
+      if (suggestionAdded && keywordState.suggestion) {
+        itemsToSave.push({
+          user_id: user.id,
+          title: keywordState.suggestion.title,
+          category: keywordState.suggestion.category,
+          frequency: keywordState.suggestion.frequency as Frequency,
+          preferred_day: keywordState.suggestion.preferred_day as DayOfWeek | null,
+          preferred_time: keywordState.suggestion.preferred_time,
+          why: keywordState.suggestion.why || null,
+          is_paused: false,
+          pause_until: null,
+          emoji: keywordState.suggestion.emoji || null,
+        });
+      }
+
+      const createdRituals = await createRituals(itemsToSave);
+
+      // Generate todos
+      for (const ritual of createdRituals) {
+        await generateTodosForRitual(ritual, 30);
+      }
+
+      setKeywordState({ stage: 'complete', count: itemsToSave.length });
+    } catch (error) {
+      console.error("Error saving keyword rituals:", error);
+    }
+    setIsLoading(false);
+  };
+
+  // Reset keyword flow
+  const resetKeywordFlow = () => {
+    setKeywordState({ stage: 'idle' });
+    setKeywordInput("");
+    setSelectedKeywordItems(new Set());
+    setCustomNewItem(null);
+    setSuggestionAdded(false);
+    setKeywordItemFrequencies({});
+    setEditingFrequencyIndex(null);
+  };
+
+  // Detect keyword in chat message
+  const handleSendWithKeywordDetection = async (text: string) => {
+    const messageText = text.trim();
+    if (!messageText) return;
+
+    // Add user message first
+    setMessages(prev => [...prev, {
+      id: Date.now().toString(),
+      role: "user",
+      content: messageText,
+    }]);
+    setInputText("");
+
+    // Check for keyword intent
+    if (detectKeywordIntent(messageText)) {
+      const keyword = extractKeyword(messageText);
+      if (keyword) {
+        haptics.light();
+        const question = getClarifyingQuestion(keyword);
+        if (question) {
+          setKeywordState({ stage: 'clarifying', keyword });
+        } else {
+          setKeywordState({ stage: 'generating', keyword, clarification: null });
+        }
+        return;
+      }
+    }
+
+    // Normal chat - proceed with AI response
+    setIsLoading(true);
+    // ... existing chat logic
+  };
+
   // Initialize
   useEffect(() => {
     checkFirstTime();
@@ -242,6 +426,11 @@ export default function PilotScreen() {
         content: "What do you want to add?",
         component: "custom-input",
       }]);
+      return;
+    }
+
+    if (categoryId === "ai_keyword") {
+      startKeywordFlow();
       return;
     }
 
@@ -318,7 +507,7 @@ export default function PilotScreen() {
         }]);
       } else {
         // Go to review
-        goToReview([...selectedItems.map(id => {
+        goToReview([...Array.from(selectedItems).map(id => {
           const items = CATEGORY_ITEMS[selectedCategory!] || [];
           const item = items.find(i => i.id === id);
           return {
@@ -369,7 +558,7 @@ export default function PilotScreen() {
   // Handle time selection
   const handleTimeSelect = (time: string) => {
     if (currentCustomItem) {
-      const timeMap: Record<string, string> = {
+      const timeMap: Record<string, string | null> = {
         morning: "08:00",
         afternoon: "14:00",
         evening: "20:00",
@@ -439,11 +628,12 @@ export default function PilotScreen() {
   // Save all rituals
   const handleSaveRituals = async () => {
     if (!user) {
-      // Demo mode - just show success
+      // Demo mode - show warning but still simulate success
+      console.log('Demo mode: Would save rituals to Supabase');
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: "assistant",
-        content: "You're all set! I've added your rituals to your life.\n\nWant to set up a learning journey or an ambition next?",
+        content: "You're all set! (Demo mode - sign in to save your rituals)\n\nWant to set up a learning journey or an ambition next?",
         component: "success",
       }]);
       return;
@@ -490,7 +680,7 @@ export default function PilotScreen() {
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: "assistant",
-        content: `You're all set! I've added ${rituals.length} rituals to your life.\n\nCheck your Today tab — ${stats.total} things are already waiting for you today. 🎉\n\nWant to set up a learning journey or a big ambition next?`,
+        content: `You're all set! I've added ${ritualsToSave.length} rituals to your life.\n\nCheck your Today tab — ${stats.total} things are already waiting for you today. 🎉\n\nWant to set up a learning journey or a big ambition next?`,
         component: "success",
       }]);
 
@@ -523,6 +713,226 @@ export default function PilotScreen() {
       }]);
       setIsLoading(false);
     }, 1000);
+  };
+
+  // Render keyword flow UI
+  const renderKeywordFlow = () => {
+    const question = keywordState.stage === 'clarifying' ? getClarifyingQuestion(keywordState.keyword) : null;
+
+    // STATE: keyword_input
+    if (keywordState.stage === 'keyword_input') {
+      return (
+        <View style={styles.keywordFlowContainer}>
+          <View style={styles.keywordInputBubble}>
+            <Text style={styles.keywordFlowText}>
+              What area of your life? Type anything —{"\n"}
+              vehicle, pet, groceries, garden,{"\n"}baby, business, travel...
+            </Text>
+            <View style={styles.keywordInputRow}>
+              <TextInput
+                style={styles.keywordInput}
+                placeholder="e.g. vehicle, dog, plants..."
+                placeholderTextColor="#5A5A5A"
+                value={keywordInput}
+                onChangeText={setKeywordInput}
+                autoFocus
+              />
+              <TouchableOpacity
+                style={[styles.keywordGoButton, !keywordInput.trim() && styles.keywordGoDisabled]}
+                onPress={handleKeywordSubmit}
+                disabled={!keywordInput.trim()}
+              >
+                <Text style={styles.keywordGoText}>Go →</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      );
+    }
+
+    // STATE: clarifying
+    if (keywordState.stage === 'clarifying' && question) {
+      return (
+        <View style={styles.keywordFlowContainer}>
+          <View style={styles.keywordOptionBubble}>
+            <Text style={styles.keywordFlowText}>{question.question}</Text>
+            <View style={styles.keywordOptionsGrid}>
+              {question.options.map((opt, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.keywordOptionChip}
+                  onPress={() => handleClarificationSelect(opt.value)}
+                >
+                  <Text style={styles.keywordOptionText}>{opt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      );
+    }
+
+    // STATE: generating
+    if (keywordState.stage === 'generating') {
+      return (
+        <View style={styles.keywordFlowContainer}>
+          <View style={styles.generatingBubble}>
+            <Text style={styles.generatingText}>🤖 Thinking about your {keywordState.keyword}...</Text>
+          </View>
+        </View>
+      );
+    }
+
+    // STATE: reviewing
+    if (keywordState.stage === 'reviewing') {
+      return (
+        <View style={styles.keywordFlowContainer}>
+          <Text style={styles.reviewTitle}>
+            Here's what I'd set up for your {keywordState.keyword} — pick what feels right:
+          </Text>
+
+          {/* While you're at it suggestion */}
+          {keywordState.suggestion && !suggestionAdded && (
+            <View style={styles.suggestionBubble}>
+              <Text style={styles.suggestionTitle}>✦ While you're at it...</Text>
+              <Text style={styles.suggestionEmoji}>{keywordState.suggestion.emoji}</Text>
+              <Text style={styles.suggestionItemTitle}>{keywordState.suggestion.title}</Text>
+              <Text style={styles.suggestionWhy}>"{keywordState.suggestion.why}"</Text>
+              <View style={styles.suggestionButtons}>
+                <TouchableOpacity style={styles.suggestionYes} onPress={handleAddSuggestion}>
+                  <Text style={styles.suggestionYesText}>Yes, add it</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.suggestionNo} onPress={() => setSuggestionAdded(true)}>
+                  <Text style={styles.suggestionNoText}>No thanks</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Checklist */}
+          {keywordState.items.map((item, idx) => {
+            const modified = keywordItemFrequencies[idx];
+            const displayFreq = modified?.frequency || item.frequency;
+            const displayDay = modified?.day || item.preferred_day;
+
+            return (
+              <View key={idx} style={styles.checklistItemWrapper}>
+                <TouchableOpacity
+                  style={styles.checklistItem}
+                  onPress={() => toggleKeywordItem(idx)}
+                >
+                  <View style={[styles.checkbox, selectedKeywordItems.has(idx) && styles.checkboxChecked]}>
+                    {selectedKeywordItems.has(idx) && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.itemEmoji}>{item.emoji}</Text>
+                  <View style={styles.checklistContent}>
+                    <Text style={styles.itemLabel}>{item.title}</Text>
+                    <Text style={styles.itemWhy}>{item.why}</Text>
+                    <TouchableOpacity
+                      style={styles.frequencyChip}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setEditingFrequencyIndex(editingFrequencyIndex === idx ? null : idx);
+                      }}
+                    >
+                      <Text style={styles.frequencyChipText}>
+                        {displayFreq.replace('_', ' ')} {displayDay ? `· ${displayDay}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Inline frequency editor */}
+                {editingFrequencyIndex === idx && selectedKeywordItems.has(idx) && (
+                  <View style={styles.frequencyEditor}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      {['daily', 'every_2_days', 'every_3_days', 'weekly', 'every_2_weeks', 'monthly', 'every_3_months', 'every_6_months', 'yearly'].map(freq => (
+                        <TouchableOpacity
+                          key={freq}
+                          style={[styles.freqOption, displayFreq === freq && styles.freqOptionActive]}
+                          onPress={() => {
+                            setKeywordItemFrequencies(prev => ({
+                              ...prev,
+                              [idx]: { ...(prev[idx] || { day: item.preferred_day, time: item.preferred_time }), frequency: freq }
+                            }));
+                            haptics.light();
+                          }}
+                        >
+                          <Text style={[styles.freqOptionText, displayFreq === freq && styles.freqOptionTextActive]}>
+                            {freq.replace('_', ' ')}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                    {['weekly', 'every_2_weeks', 'monthly', 'every_3_months', 'every_6_months', 'yearly'].includes(displayFreq) && (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayEditor}>
+                        {['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(day => (
+                          <TouchableOpacity
+                            key={day}
+                            style={[styles.dayOption, displayDay === day && styles.dayOptionActive]}
+                            onPress={() => {
+                              setKeywordItemFrequencies(prev => ({
+                                ...prev,
+                                [idx]: { ...(prev[idx] || { frequency: displayFreq, time: item.preferred_time }), day }
+                              }));
+                              haptics.light();
+                            }}
+                          >
+                            <Text style={[styles.dayOptionText, displayDay === day && styles.dayOptionTextActive]}>
+                              {day.charAt(0).toUpperCase()}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+
+          {/* Save button */}
+          <TouchableOpacity
+            style={styles.looksGoodButton}
+            onPress={saveKeywordRituals}
+          >
+            <Text style={styles.looksGoodText}>Looks good — save these ✓</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // STATE: saving
+    if (keywordState.stage === 'saving') {
+      const savingKeyword = (keywordState as { stage: string; keyword: string }).keyword;
+      return (
+        <View style={styles.keywordFlowContainer}>
+          <Text style={styles.savingText}>Saving your {savingKeyword} rituals...</Text>
+        </View>
+      );
+    }
+
+    // STATE: complete
+    if (keywordState.stage === 'complete') {
+      const completeState = keywordState as { stage: 'complete'; count: number; keyword: string };
+      return (
+        <View style={styles.keywordFlowContainer}>
+          <Text style={styles.completeText}>
+            Done! I've added {completeState.count} {completeState.keyword} rituals to your life. 🎉
+          </Text>
+          <View style={styles.completeButtons}>
+            <TouchableOpacity style={styles.completeButton} onPress={resetKeywordFlow}>
+              <Text style={styles.completeButtonText}>Yes, another area</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.completeButtonSecondary} onPress={resetKeywordFlow}>
+              <Text style={styles.completeButtonSecondaryText}>I'm good for now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    return null;
   };
 
   // Render message
@@ -698,10 +1108,14 @@ export default function PilotScreen() {
 
                 {item.frequency === "daily" && (
                   <View style={styles.timeSelector}>
-                    {TIMES.map(time => (
+                    {TIMES.map(time => {
+                      const isSelected = item.time
+                        ? (time.value === "morning" && item.time === "08:00" || time.value === "afternoon" && item.time === "14:00" || time.value === "evening" && item.time === "20:00")
+                        : time.value === "anytime";
+                      return (
                       <TouchableOpacity
                         key={time.value}
-                        style={[styles.timeChip, item.time && (time.value === "morning" && item.time === "08:00" || time.value === "afternoon" && item.time === "14:00" || time.value === "evening" && item.time === "20:00" || time.value === "anytime" && !item.time) && styles.timeChipActive]}
+                        style={[styles.timeChip, isSelected && styles.timeChipActive]}
                         onPress={() => {
                           const timeMap: Record<string, string | null> = {
                             morning: "08:00",
@@ -714,7 +1128,8 @@ export default function PilotScreen() {
                       >
                         <Text style={styles.timeChipText}>{time.emoji} {time.label}</Text>
                       </TouchableOpacity>
-                    ))}
+                    );
+                    })}
                   </View>
                 )}
 
@@ -784,6 +1199,9 @@ export default function PilotScreen() {
         >
           <Text style={styles.addMoreChipText}>+ Add more</Text>
         </TouchableOpacity>
+
+        {/* Keyword Flow UI */}
+        {keywordState.stage !== 'idle' && renderKeywordFlow()}
 
         {/* Category Modal */}
         <Modal
@@ -859,6 +1277,24 @@ export default function PilotScreen() {
           </View>
         )}
 
+        {/* Quick Action Chips */}
+        <View style={styles.quickChipsContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickChipsScroll}>
+            <TouchableOpacity style={styles.quickChip} onPress={startKeywordFlow}>
+              <Text style={styles.quickChipText}>✦ AI suggest for...</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickChip} onPress={() => router.push("/today")}>
+              <Text style={styles.quickChipText}>Set up a journey</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickChip} onPress={() => router.push("/today")}>
+              <Text style={styles.quickChipText}>Big ambition</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+
+        {/* Keyword Flow UI */}
+        {keywordState.stage !== 'idle' && renderKeywordFlow()}
+
         {/* Input */}
         <View style={styles.inputContainer}>
           <TextInput
@@ -869,11 +1305,11 @@ export default function PilotScreen() {
             onChangeText={setInputText}
             multiline
             maxLength={500}
-            onSubmitEditing={() => handleSend()}
+            onSubmitEditing={() => handleSendWithKeywordDetection(inputText)}
           />
           <TouchableOpacity
             style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]}
-            onPress={handleSend}
+            onPress={() => handleSendWithKeywordDetection(inputText)}
             disabled={!inputText.trim() || isLoading}
           >
             <Text style={styles.sendButtonText}>→</Text>
@@ -1398,5 +1834,288 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: "#9A9A9A",
     padding: 4,
+  },
+  // Quick chips
+  quickChipsContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#2A2A2A",
+  },
+  quickChipsScroll: {
+    gap: 8,
+    flexDirection: "row",
+  },
+  quickChip: {
+    backgroundColor: "#141414",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+  },
+  quickChipText: {
+    color: "#7C3AED",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  // Keyword flow
+  keywordFlowContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  keywordInputBubble: {
+    backgroundColor: "#141414",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+  },
+  keywordFlowText: {
+    fontSize: 15,
+    color: "#FFFFFF",
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  keywordInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  keywordInput: {
+    flex: 1,
+    backgroundColor: "#0A0A0A",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+  },
+  keywordGoButton: {
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  keywordGoDisabled: {
+    backgroundColor: "#2A2A2A",
+  },
+  keywordGoText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  keywordOptionBubble: {
+    backgroundColor: "#141414",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+  },
+  keywordOptionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  keywordOptionChip: {
+    backgroundColor: "#0A0A0A",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+  },
+  keywordOptionText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+  },
+  generatingBubble: {
+    backgroundColor: "#141414",
+    borderRadius: 16,
+    padding: 20,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+  },
+  generatingText: {
+    color: "#7C3AED",
+    fontSize: 15,
+    fontStyle: "italic",
+  },
+  reviewTitle: {
+    fontSize: 16,
+    color: "#FFFFFF",
+    fontWeight: "600",
+    marginBottom: 16,
+  },
+  suggestionBubble: {
+    backgroundColor: "#7C3AED20",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#7C3AED40",
+  },
+  suggestionTitle: {
+    fontSize: 14,
+    color: "#7C3AED",
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  suggestionEmoji: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  suggestionItemTitle: {
+    fontSize: 15,
+    color: "#FFFFFF",
+    fontWeight: "500",
+  },
+  suggestionWhy: {
+    fontSize: 13,
+    color: "#9A9A9A",
+    marginBottom: 12,
+  },
+  suggestionButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  suggestionYes: {
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  suggestionYesText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  suggestionNo: {
+    backgroundColor: "transparent",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+  },
+  suggestionNoText: {
+    color: "#9A9A9A",
+    fontSize: 14,
+  },
+  checklistContent: {
+    flex: 1,
+  },
+  itemWhy: {
+    fontSize: 12,
+    color: "#9A9A9A",
+    marginTop: 4,
+  },
+  frequencyChip: {
+    backgroundColor: "#0A0A0A",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginTop: 8,
+    alignSelf: "flex-start",
+  },
+  frequencyChipText: {
+    fontSize: 11,
+    color: "#5A5A5A",
+  },
+  // Frequency editor
+  checklistItemWrapper: {
+    backgroundColor: "#1A1A1A",
+    borderRadius: 12,
+    marginBottom: 8,
+    overflow: "hidden",
+  },
+  frequencyEditor: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: "#141414",
+  },
+  freqOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#2A2A2A",
+    marginRight: 8,
+  },
+  freqOptionActive: {
+    backgroundColor: "#7C3AED",
+  },
+  freqOptionText: {
+    fontSize: 12,
+    color: "#9A9A9A",
+  },
+  freqOptionTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "500",
+  },
+  dayEditor: {
+    marginTop: 8,
+  },
+  dayOption: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#2A2A2A",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  dayOptionActive: {
+    backgroundColor: "#7C3AED",
+  },
+  dayOptionText: {
+    fontSize: 12,
+    color: "#9A9A9A",
+    fontWeight: "500",
+  },
+  dayOptionTextActive: {
+    color: "#FFFFFF",
+  },
+  savingText: {
+    fontSize: 15,
+    color: "#7C3AED",
+    textAlign: "center",
+  },
+  completeText: {
+    fontSize: 16,
+    color: "#FFFFFF",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  completeButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  completeButton: {
+    flex: 1,
+    backgroundColor: "#7C3AED",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  completeButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  completeButtonSecondary: {
+    flex: 1,
+    backgroundColor: "transparent",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+  },
+  completeButtonSecondaryText: {
+    color: "#9A9A9A",
+    fontSize: 14,
   },
 });

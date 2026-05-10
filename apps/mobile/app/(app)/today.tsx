@@ -12,6 +12,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
 import { haptics } from "../../lib/haptics";
 import { useAuth } from "../../context/auth";
+import { getStreakPersonality, type Todo } from "../../lib/types";
 import {
   getTodayTodos,
   getUpcomingTodos,
@@ -20,10 +21,8 @@ import {
   snoozeTodo,
   getTodayStats,
   getWeekStats,
-  getStreakPersonality,
   getRitualsCount,
   getJourneysCount,
-  type Todo,
 } from "../../lib/db";
 
 interface TodoSection {
@@ -46,6 +45,7 @@ export default function TodayScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [pilotTip, setPilotTip] = useState("You're doing great! Keep up the momentum.");
   const [completedTodos, setCompletedTodos] = useState<Set<string>>(new Set());
+  const [ritualsCount, setRitualsCount] = useState(0);
 
   // Load data
   const loadData = async () => {
@@ -69,6 +69,7 @@ export default function TodayScreen() {
       setUpcomingTodos(upcomingData);
       setTodayStats(stats);
       setWeekStats(week);
+      setRitualsCount(ritualsCount);
 
       // Calculate streak from week stats
       const rollDays = week.completionPct > 0 ? Math.ceil(week.completed / 7) : 0;
@@ -166,7 +167,7 @@ export default function TodayScreen() {
 
     const newCompleted = new Set(completedTodos);
     if (newCompleted.has(todo.id)) {
-      newCompleted.delete(todo);
+      newCompleted.delete(todo.id);
       if (user) {
         try {
           await uncompleteTodo(todo.id);
@@ -280,22 +281,57 @@ export default function TodayScreen() {
   const regularTodos = todos.filter(t => !urgentTodos.includes(t));
   const timeGroups = groupTodosByTimeOfDay(regularTodos);
 
+  // Check all todos completed (not just empty)
+  const allTodosCompleted = todos.length > 0 && todos.every(t => t.completed);
+
   // Empty state
-  if (todos.length === 0 && upcomingTodos.length === 0) {
+  if ((todos.length === 0 && upcomingTodos.length === 0) || allTodosCompleted) {
+    // Check if user has rituals set up
+    const hasRituals = ritualsCount > 0;
+
+    let emptyEmoji, emptyTitle, emptySubtitle, showButton;
+
+    if (!user || ritualsCount === 0) {
+      // User has no rituals at all
+      emptyEmoji = "🌱";
+      emptyTitle = "Nothing set up yet";
+      emptySubtitle = "Tell Pilot what you want to stay on top of";
+      showButton = true;
+    } else if (allTodosCompleted) {
+      // All done for today
+      emptyEmoji = "✨";
+      emptyTitle = "You nailed today!";
+      emptySubtitle = "Seriously — well done.";
+      showButton = false;
+    } else if (hasRituals && upcomingTodos.length > 0) {
+      // User has rituals but nothing due today, but has upcoming
+      const nextTodo = upcomingTodos[0];
+      emptyEmoji = "🌿";
+      emptyTitle = "Nothing due today";
+      emptySubtitle = `Your next thing is "${nextTodo?.title}" on ${new Date(nextTodo?.due_date || '').toLocaleDateString('en-US', { weekday: 'long' })}`;
+      showButton = true;
+    } else {
+      // Nothing due
+      emptyEmoji = "🌿";
+      emptyTitle = "Nothing due today";
+      emptySubtitle = "Your next thing is coming up soon";
+      showButton = true;
+    }
+
     return (
       <LinearGradient colors={["#0A0A0A", "#111111"]} style={styles.container}>
         <ScrollView contentContainerStyle={styles.emptyContent} showsVerticalScrollIndicator={false}>
-          <Text style={styles.emptyEmoji}>✨</Text>
-          <Text style={styles.emptyTitle}>You're all caught up!</Text>
-          <Text style={styles.emptySubtitle}>
-            Tell Pilot something new to stay on top of
-          </Text>
-          <TouchableOpacity
-            style={styles.openPilotButton}
+          <Text style={styles.emptyEmoji}>{emptyEmoji}</Text>
+          <Text style={styles.emptyTitle}>{emptyTitle}</Text>
+          <Text style={styles.emptySubtitle}>{emptySubtitle}</Text>
+          {showButton ? (
+            <TouchableOpacity
+              style={styles.openPilotButton}
             onPress={() => router.push("/pilot")}
           >
             <Text style={styles.openPilotButtonText}>Open Pilot</Text>
           </TouchableOpacity>
+          ) : null}
         </ScrollView>
       </LinearGradient>
     );

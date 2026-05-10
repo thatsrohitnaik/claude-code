@@ -1,12 +1,15 @@
 import "react-native-url-polyfill/auto";
 import { Platform, AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "placeholder-key";
+// Use env vars or fallback to your actual Supabase project
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "https://quowgzfzovizdzivvuch.supabase.co";
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_DvF-vO3A6GgXW0clFlPVPg_ATqurrvu";
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+console.log('Supabase URL:', supabaseUrl);
+
+export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     ...(Platform.OS !== "web" ? { storage: AsyncStorage } : {}),
     autoRefreshToken: true,
@@ -14,6 +17,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: Platform.OS === "web",
   },
 });
+
+export async function signOut(): Promise<void> {
+  await supabase.auth.signOut();
+}
 
 if (Platform.OS !== "web") {
   AppState.addEventListener("change", (state) => {
