@@ -1,22 +1,14 @@
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
-  const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
-    index: "home",
-    goals: "flag",
-    plan: "calendar",
-    progress: "bar-chart",
-    profile: "person",
-  };
-
+  const color = focused ? "#7C3AED" : "#5A5A5A";
   return (
-    <Ionicons
-      name={icons[name] || "ellipse"}
-      size={24}
-      color={focused ? "#6366F1" : "#6B7280"}
-    />
+    <View style={styles.iconContainer}>
+      <Text style={[styles.iconText, { color }]}>
+        {name === 'pilot' ? '✦' : name === 'today' ? '✓' : name === 'myworld' ? '🌍' : '○'}
+      </Text>
+    </View>
   );
 }
 
@@ -26,49 +18,47 @@ export default function AppLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: "#6366F1",
-        tabBarInactiveTintColor: "#6B7280",
+        tabBarActiveTintColor: "#7C3AED",
+        tabBarInactiveTintColor: "#5A5A5A",
         tabBarLabelStyle: styles.tabLabel,
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="pilot"
         options={{
-          title: "Home",
-          tabBarIcon: ({ focused }) => <TabIcon name="index" focused={focused} />,
+          title: "Pilot",
+          tabBarIcon: ({ focused }) => <TabIcon name="pilot" focused={focused} />,
         }}
+      />
+      <Tabs.Screen
+        name="today"
+        options={{
+          title: "Today",
+          tabBarIcon: ({ focused }) => <TabIcon name="today" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="myworld"
+        options={{
+          title: "My World",
+          tabBarIcon: ({ focused }) => <TabIcon name="myworld" focused={focused} />,
+        }}
+      />
+      {/* Hide these from tab bar - old routes */}
+      <Tabs.Screen
+        name="index"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="goals"
-        options={{
-          title: "Goals",
-          tabBarIcon: ({ focused }) => <TabIcon name="goals" focused={focused} />,
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
-        name="plan"
-        options={{
-          title: "Plan",
-          tabBarIcon: ({ focused }) => <TabIcon name="plan" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="progress"
-        options={{
-          title: "Progress",
-          tabBarIcon: ({ focused }) => <TabIcon name="progress" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ focused }) => <TabIcon name="profile" focused={focused} />,
-        }}
-      />
-      {/* Hide these from tab bar */}
-      <Tabs.Screen
-        name="chat"
+        name="goals/index"
         options={{ href: null }}
       />
       <Tabs.Screen
@@ -79,14 +69,30 @@ export default function AppLayout() {
         name="goals/new"
         options={{ href: null }}
       />
+      <Tabs.Screen
+        name="goals/suggest"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="plan"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="progress"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{ href: null }}
+      />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: "#0D0D0D",
-    borderTopColor: "#1F2937",
+    backgroundColor: "#0F0F0F",
+    borderTopColor: "#2A2A2A",
     borderTopWidth: 1,
     height: 80,
     paddingBottom: 20,
@@ -95,5 +101,14 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 12,
     fontWeight: "500",
+  },
+  iconContainer: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconText: {
+    fontSize: 20,
   },
 });

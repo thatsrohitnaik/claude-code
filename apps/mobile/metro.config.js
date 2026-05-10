@@ -5,10 +5,13 @@ const path = require('path');
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
 
-// Fix for yarn workspaces - include root node_modules
-config.watchFolders = [__dirname, path.resolve(__dirname, '../../node_modules')];
-config.resolver.extraNodeModules = {
-  'expo-router': path.resolve(__dirname, '../../node_modules/expo-router'),
-};
+// Add local node_modules to resolution
+const localNodeModules = path.resolve(__dirname, 'node_modules');
+const rootNodeModules = path.resolve(__dirname, '../../node_modules');
+
+config.watchFolders = [__dirname, localNodeModules];
+
+// Ensure local node_modules takes priority
+config.resolver.nodeModulesPaths = [localNodeModules, rootNodeModules];
 
 module.exports = config;
